@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+
+<launch>
+
+   <param name="robot_description" command="$(find xacro)/xacro '$(find robo_lib_test)/urdf/robot_description.urdf'" />
+
+    <node pkg="robo_lib_test" type="kinematic_chain_test" name="kinematic_chain_test_node"
+          output="screen" required="true">
+
+        <rosparam>
+
+          ik_pos_solver: "LMA" # "LMA", "NR", "NR_JL"
+          ik_vel_solver: "PINV" # "PINV_GIVENS", "PINV_NSO", "WDLS"
+          max_iter: 100
+          err_tol: 1e-5
+
+        </rosparam>
+
+    </node>
+
+</launch>
