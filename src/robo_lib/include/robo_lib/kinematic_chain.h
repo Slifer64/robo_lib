@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 
-#include <urdf/model.h>
 #include <kdl/chain.hpp> // KDL::Chain
 #include <kdl_parser/kdl_parser.hpp> // KDL::Tree
 #include <kdl/chainfksolverpos_recursive.hpp>
@@ -42,10 +41,14 @@ enum IK_VEL_SOLVER
 class KinematicChain
 {
 public:
-  KinematicChain(urdf::Model &urdf_model, const std::string &base_link, const std::string &tool_link);
-  KinematicChain(const std::string &robot_desc_param, const std::string &base_link, const std::string &tool_link);
+  KinematicChain();
   ~KinematicChain();
 
+  void initFromFile(const std::string &urdf_filename, const std::string &base_link, const std::string &tip_link);
+  void initFromParam(const std::string &robot_description_param, const std::string &base_link, const std::string &tip_link);
+  void initFromXmlString(const std::string &robot_description_xml_str, const std::string &base_link, const std::string &tip_link);
+
+  void setInvKinematicsSolver(IK_POS_SOLVER ik_pos_solver_, int max_iter=100, double err_tol=1e-5);
   void setInvKinematicsSolver(IK_POS_SOLVER ik_pos_solver_, IK_VEL_SOLVER ik_vel_solver_=IK_VEL_SOLVER::PINV, int max_iter=100, double err_tol=1e-5);
 
   int getNumOfJoints() const;
@@ -71,6 +74,7 @@ public:
   Eigen::Matrix4d getPose(const Eigen::VectorXd &j_pos, const std::string &link_name="") const;
   Eigen::MatrixXd getJacobian(const Eigen::VectorXd j_pos) const;
 
+  // ========  public attributes  ==========
   std::vector<std::string> joint_names;
   std::vector<std::string> link_names;
   std::vector<double> joint_pos_lower_lim;
@@ -90,11 +94,10 @@ private:
     return q;
   }
 
-  void init();
+  void init(void *urdf_model_ptr);
 
-  int N_JOINTS;
+  const int N_JOINTS;
 
-  urdf::Model urdf_model;
   std::shared_ptr<KDL::ChainFkSolverPos_recursive> fk_solver;
   std::shared_ptr<KDL::ChainIkSolverVel> ik_vel_solver;//Inverse velocity solver
   std::shared_ptr<KDL::ChainIkSolverPos> ik_solver;
@@ -106,7 +109,7 @@ private:
   std::map<std::string, int> link_id_map;
 
   std::string base_link_name;
-  std::string tool_link_name;
+  std::string tip_link_name;
 };
 
 }; // namespace robo_

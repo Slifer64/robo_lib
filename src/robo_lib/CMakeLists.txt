@@ -29,6 +29,7 @@ SET(SRC_LIST
   src/joint_state_publisher
   src/robot_state_publisher
   src/_utils/xml_parser.cpp
+  src/_utils/math.cpp
 )
 
 include_directories(

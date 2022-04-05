@@ -9,10 +9,12 @@
 
         <rosparam>
 
-          ik_pos_solver: "LMA" # "LMA", "NR", "NR_JL"
-          ik_vel_solver: "PINV" # "PINV_GIVENS", "PINV_NSO", "WDLS"
+          init_from: "string"      # "file", "param", "string"
+
+          ik_pos_solver: "NR_JL"   # "LMA", "NR", "NR_JL"
+          ik_vel_solver: "PINV"  # "PINV", "PINV_GIVENS", "PINV_NSO", "WDLS"
           max_iter: 100
-          err_tol: 1e-5
+          err_tol: 0.00001
 
         </rosparam>
 

@@ -5,6 +5,8 @@
 #include <cmath>
 #include <stack>
 
+#include <urdf/model.h>
+
 #include <kdl/chainiksolverpos_nr.hpp>
 #include <kdl/chainiksolverpos_nr_jl.hpp>
 #include <kdl/chainiksolverpos_lma.hpp>
@@ -74,41 +76,59 @@ arma::vec rotm2quat(const arma::mat &R)
   return q / arma::norm(q);
 }
 
-KinematicChain::KinematicChain(urdf::Model &urdf_model, const std::string &base_link, const std::string &tool_link)
-{
-  this->urdf_model = urdf_model;
-  this->base_link_name = base_link;
-  this->tool_link_name = tool_link;
-
-  init();
-}
-
-KinematicChain::KinematicChain(const std::string &robot_desc_param, const std::string &base_link, const std::string &tool_link)
-{
-  if (!urdf_model.initParam(robot_desc_param.c_str()))
-  {
-    throw std::ios_base::failure("Couldn't load urdf model from \"" + robot_desc_param + "\"...\n");
-  }
-
-  this->base_link_name = base_link;
-  this->tool_link_name = tool_link;
-
-  init();
-}
+KinematicChain::KinematicChain(): N_JOINTS(0) {}
 
 KinematicChain::~KinematicChain() {}
 
-void KinematicChain::init()
+void KinematicChain::initFromFile(const std::string &urdf_filename, const std::string &base_link, const std::string &tip_link)
 {
-  auto link_type = urdf_model.getRoot();
+  urdf::Model urdf_model;
+  if (!urdf_model.initFile(urdf_filename))
+    throw std::ios_base::failure("Couldn't load urdf model from file \"" + urdf_filename + "\"...\n");
+
+  this->base_link_name = base_link;
+  this->tip_link_name = tip_link;
+
+  init(reinterpret_cast<void *>(&urdf_model));
+}
+
+void KinematicChain::initFromParam(const std::string &robot_description_param, const std::string &base_link, const std::string &tip_link)
+{
+  urdf::Model urdf_model;
+  if (!urdf_model.initParam(robot_description_param))
+    throw std::ios_base::failure("Couldn't load urdf model from param \"" + robot_description_param + "\"...\n");
+
+  this->base_link_name = base_link;
+  this->tip_link_name = tip_link;
+
+  init(reinterpret_cast<void *>(&urdf_model));
+}
+
+void KinematicChain::initFromXmlString(const std::string &robot_description_xml_str, const std::string &base_link, const std::string &tip_link)
+{
+  urdf::Model urdf_model;
+  if (!urdf_model.initString(robot_description_xml_str))
+    throw std::ios_base::failure("Couldn't load urdf model from xml string \"" + robot_description_xml_str + "\"...\n");
+
+  this->base_link_name = base_link;
+  this->tip_link_name = tip_link;
+
+  init(reinterpret_cast<void *>(&urdf_model));
+}
+
+void KinematicChain::init(void *urdf_model_ptr)
+{
+  urdf::Model *urdf_model = reinterpret_cast<urdf::Model *>(urdf_model_ptr);
+
+  auto link_type = urdf_model->getRoot();
   
-  // find base_link and tool_link
+  // find base_link and tip_link
   bool found_base_link = false;
-  bool found_tool_link = false;
+  bool found_tip_link = false;
   decltype(link_type) base_link;
-  decltype(link_type) tool_link;
+  decltype(link_type) tip_link;
   std::stack<decltype(link_type)> link_stack;
-  link_stack.push(urdf_model.getRoot());
+  link_stack.push(urdf_model->getRoot());
   while (!link_stack.empty())
   {
     auto link = link_stack.top();
@@ -120,10 +140,10 @@ void KinematicChain::init()
       found_base_link = true;
     }
 
-    if (tool_link_name.compare(link->name) == 0)
+    if (tip_link_name.compare(link->name) == 0)
     {
-      tool_link = link;
-      found_tool_link = true;
+      tip_link = link;
+      found_tip_link = true;
     }
 
     for (int i=0;i<link->child_links.size();i++) link_stack.push(link->child_links[i]);
@@ -133,17 +153,17 @@ void KinematicChain::init()
   if (!found_base_link)
     throw std::runtime_error("Couldn't find specified base link \"" + base_link_name + "\" in the robot urdf model...\n");
 
-  if (!found_tool_link)
-    throw std::runtime_error("Couldn't find specified tool link \"" + tool_link_name + "\" in the robot urdf model...\n");
+  if (!found_tip_link)
+    throw std::runtime_error("Couldn't find specified tool link \"" + tip_link_name + "\" in the robot urdf model...\n");
 
-  // find all links in the chain from tool_link to base_link
+  // find all links in the chain from tip_link to base_link
   std::vector<decltype(link_type)> chain_links;
-  auto link = tool_link;
+  auto link = tip_link;
   while (link->name.compare(base_link->name))
   {
     chain_links.push_back(link);
     link = link->getParent();
-    if (!link) throw std::runtime_error("[RobotUrdf Error]: The tool link \"" + tool_link_name + "\" does not belong in the branch of the base link \"" + base_link_name + "\"...");
+    if (!link) throw std::runtime_error("[RobotUrdf Error]: The tool link \"" + tip_link_name + "\" does not belong in the branch of the base link \"" + base_link_name + "\"...");
   }
   chain_links.push_back(base_link);
 
@@ -182,14 +202,14 @@ void KinematicChain::init()
     }
   }
 
-  N_JOINTS = joint_pos_lower_lim.size();
+  *const_cast<int *>(&N_JOINTS) = joint_pos_lower_lim.size();
 
   // create KDL::Chain and forward/inverse kinematics and Jacobian solvers
   //KDL::Tree tree;
-  kdl_parser::treeFromUrdfModel(urdf_model, tree);
+  kdl_parser::treeFromUrdfModel(*urdf_model, tree);
 
-  if (!tree.getChain(base_link_name, tool_link_name, chain))
-    throw std::runtime_error("Failed to create kdl chain from " + base_link_name + " to " + tool_link_name + " ...\n");
+  if (!tree.getChain(base_link_name, tip_link_name, chain))
+    throw std::runtime_error("Failed to create kdl chain from " + base_link_name + " to " + tip_link_name + " ...\n");
 
   std::vector<KDL::Segment> links(chain.segments);
   for (int i=0; i<links.size(); i++)
@@ -202,6 +222,11 @@ void KinematicChain::init()
   jac_solver.reset(new KDL::ChainJntToJacSolver(chain));
 
   setInvKinematicsSolver(IK_POS_SOLVER::NR_JL, IK_VEL_SOLVER::PINV_GIVENS, 100, 1e-5);
+}
+
+void KinematicChain::setInvKinematicsSolver(IK_POS_SOLVER ik_pos_solver_, int max_iter, double err_tol)
+{
+  setInvKinematicsSolver(ik_pos_solver_, IK_VEL_SOLVER::PINV, max_iter, err_tol);
 }
 
 void KinematicChain::setInvKinematicsSolver(IK_POS_SOLVER ik_pos_solver_, IK_VEL_SOLVER ik_vel_solver_, int max_iter, double err_tol)
